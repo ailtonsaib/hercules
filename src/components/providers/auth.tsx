@@ -1,23 +1,28 @@
-import { HerculesAuthProvider } from "@usehercules/auth/react";
+import * as React from 'react';
+import { ClerkProvider, useAuth } from '@clerk/react';
+import { ConvexProviderWithClerk } from 'convex/react-clerk';
+import { ConvexReactClient } from 'convex/react';
+
+// Busca as chaves direto do seu arquivo .env.local
+const convexUrl = (import.meta as any).env.VITE_CONVEX_URL as string;
+const clerkKey = (import.meta as any).env.VITE_CLERK_PUBLISHABLE_KEY as string;
+
+const convex = new ConvexReactClient(convexUrl);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  if (!clerkKey) {
+    return (
+      <div style={{ padding: '20px', color: 'red', fontFamily: 'sans-serif' }}>
+        <strong>Erro de Configuração:</strong> Variável VITE_CLERK_PUBLISHABLE_KEY não encontrada no seu arquivo .env.local.
+      </div>
+    );
+  }
+
   return (
-    <HerculesAuthProvider
-      authority={import.meta.env.VITE_HERCULES_OIDC_AUTHORITY!}
-      client_id={import.meta.env.VITE_HERCULES_OIDC_CLIENT_ID!}
-      userManagerSettings={{
-        prompt: import.meta.env.VITE_HERCULES_OIDC_PROMPT ?? "select_account",
-        response_type:
-          import.meta.env.VITE_HERCULES_OIDC_RESPONSE_TYPE ?? "code",
-        scope:
-          import.meta.env.VITE_HERCULES_OIDC_SCOPE ??
-          "openid profile email offline_access",
-        redirect_uri:
-          import.meta.env.VITE_HERCULES_OIDC_REDIRECT_URI ??
-          `${window.location.origin}/auth/callback`,
-      }}
-    >
-      {children}
-    </HerculesAuthProvider>
+    <ClerkProvider publishableKey={clerkKey}>
+      <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
+        {children}
+      </ConvexProviderWithClerk>
+    </ClerkProvider>
   );
 }

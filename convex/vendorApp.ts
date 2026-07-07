@@ -5,16 +5,21 @@ import { ConvexError } from "convex/values";
 /**
  * 📲 QUERY: Efetuar Login do Cambista via Número de Celular
  */
-export const loginVendorByPhone = query({
+export const loginVendorByPhone = mutation({
   args: { phone: v.string() },
   handler: async (ctx: any, args: any) => {
-    const cleanPhone = args.phone.trim();
+    const digitadoApenasNumeros = args.phone.replace(/\D/g, "");
     const vendors = await ctx.db.query("vendors" as any).collect();
-    const vendorLocalizado = vendors.find((v: any) => v.phone === cleanPhone);
+    
+    const vendorLocalizado = vendors.find((v: any) => {
+      const bancoApenasNumeros = String(v.phone || "").replace(/\D/g, "");
+      return bancoApenasNumeros === digitadoApenasNumeros;
+    });
 
     if (!vendorLocalizado) {
       throw new ConvexError("Telefone não cadastrado na rede de vendedores oficial.");
     }
+    
     return vendorLocalizado;
   },
 });

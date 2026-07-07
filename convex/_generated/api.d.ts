@@ -9,6 +9,8 @@
  */
 
 import type * as appSettings from "../appSettings.js";
+import type * as auth from "../auth.js";
+import type * as batches from "../batches.js";
 import type * as cardTemplates from "../cardTemplates.js";
 import type * as cards from "../cards.js";
 import type * as crons from "../crons.js";
@@ -25,7 +27,7 @@ import type * as regulations from "../regulations.js";
 import type * as rifas from "../rifas.js";
 import type * as users from "../users.js";
 import type * as vendor from "../vendor.js";
-import type * as vendorBatches from "../vendorBatches.js";
+import type * as vendorApp from "../vendorApp.js";
 import type * as vendors from "../vendors.js";
 
 import type {
@@ -36,6 +38,8 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   appSettings: typeof appSettings;
+  auth: typeof auth;
+  batches: typeof batches;
   cardTemplates: typeof cardTemplates;
   cards: typeof cards;
   crons: typeof crons;
@@ -52,7 +56,7 @@ declare const fullApi: ApiFromModules<{
   rifas: typeof rifas;
   users: typeof users;
   vendor: typeof vendor;
-  vendorBatches: typeof vendorBatches;
+  vendorApp: typeof vendorApp;
   vendors: typeof vendors;
 }>;
 

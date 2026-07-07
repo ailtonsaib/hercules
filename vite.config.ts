@@ -1,33 +1,26 @@
-import path from "node:path";
-import tailwindcss from "@tailwindcss/vite";
-import hercules from "@usehercules/vite";
-import react from "@vitejs/plugin-react-swc";
 import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react-swc";
+import tailwindcss from "@tailwindcss/vite"; // Adiciona o compilador nativo do v4
+import path from "path";
 
-// https://vite.dev/config/
+// https://vite.dev
 export default defineConfig({
-  server: {
-    host: "0.0.0.0",
-    port: 5173,
-    allowedHosts: true,
-    hmr: {
-      overlay: false,
-    },
-  },
-  plugins: [react(), tailwindcss(), hercules()],
+  plugins: [
+    react(),
+    tailwindcss() // Injeta o Tailwind v4 diretamente no motor do Vite
+  ],
   resolve: {
     alias: {
-      "@/convex": path.resolve(__dirname, "./convex"),
       "@": path.resolve(__dirname, "./src"),
     },
-    dedupe: [
-      "react",
-      "react-dom",
-      "react/jsx-runtime",
-      "react/jsx-dev-runtime",
-    ],
   },
-  build: {
-    chunkSizeWarningLimit: 1000,
+  server: {
+    port: 5173,
+    strictPort: true,
+    hmr: {
+      protocol: "ws",
+      host: "localhost",
+      port: 5173,
+    },
   },
 });

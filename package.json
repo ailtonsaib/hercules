@@ -12,6 +12,8 @@
     "prettier-check": "prettier --check ."
   },
   "dependencies": {
+    "@clerk/clerk-react": "^5.61.3",
+    "@clerk/react": "^6.11.3",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
@@ -99,4 +101,4 @@
     "typescript-eslint": "^8.59.2",
     "vite": "^7.3.2"
   }
-}
+ }

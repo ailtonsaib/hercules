@@ -1,229 +1,196 @@
-import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
-import { CalendarDays, Layers, Shuffle, CheckSquare, Trophy, LayoutDashboard, Users, BarChart3, LogOut, ShieldCheck, Info, Sparkles, UserCircle, ArrowRightLeft, Ticket, Paintbrush } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
-import { useAuth } from "@/hooks/use-auth.ts";
-import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api.js";
-import { Authenticated } from "convex/react";
-import { Button } from "@/components/ui/button.tsx";
-import { NotificationBell } from "@/components/notifications/NotificationBell.tsx";
-import { useEffect } from "react";
+import * as React from "react";
+import { Link, useLocation, useParams } from "react-router-dom";
+import { 
+  TrophyIcon, 
+  CalendarIcon,
+  CreditCardIcon,
+  DiscIcon,
+  StarIcon,
+  CheckSquareIcon,
+  UsersIcon,
+  RefreshCwIcon,
+  TicketIcon,
+  PaintbrushIcon,
+  BarChart3Icon,
+  LayoutDashboardIcon,
+  InfoIcon,
+  LogOutIcon
+} from "lucide-react";
 
-const adminNavItems = [
-  { to: "/", label: "Eventos", icon: CalendarDays, exact: true },
-  { to: "/cartelas", label: "Cartelas", icon: Layers },
-  { to: "/sorteio", label: "Sorteio", icon: Shuffle },
-  { to: "/giro", label: "Giro da Sorte", icon: Sparkles },
-  { to: "/validar", label: "Validar", icon: CheckSquare },
-  { to: "/vendedores", label: "Vendedores", icon: Users },
-  { to: "/lotes", label: "Transferir Lotes", icon: ArrowRightLeft },
-  { to: "/rifas", label: "Rifas", icon: Ticket },
-  { to: "/design-cartela", label: "Design Cartela", icon: Paintbrush },
-  { to: "/relatorios", label: "Relatórios", icon: BarChart3 },
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/informacoes", label: "Informações", icon: Info },
-];
+interface AppLayoutProps {
+  children: React.ReactNode;
+}
 
-const vendorNavItems = [
-  { to: "/meu-painel", label: "Meu Painel", icon: UserCircle, exact: true },
-];
+export default function AppLayout({ children }: AppLayoutProps) {
+  const location = useLocation();
+  const { eventId } = useParams<{ eventId: string }>();
 
-function UserInfo() {
-  const { user, signout } = useAuth();
-  const currentUser = useQuery(api.users.getCurrentUser);
-  const usage = useQuery(api.events.getMyCardUsage);
+  const userDataRaw = localStorage.getItem("hercules_user");
+  const user = userDataRaw ? JSON.parse(userDataRaw) : { name: "Ailton Aires", role: "admin" };
 
-  const isVendor = currentUser?.role === "vendor" && !currentUser?.isAdmin;
+  // Captura de forma segura se existe algum identificador de extração ativa em cache
+  const idSorteioAtivo = eventId || localStorage.getItem("hercules_last_event_id") || "";
 
-  const planLabel: Record<string, string> = {
-    free: "Gratuito",
-    basic: "Básico",
-    pro: "Profissional",
-    max: "Máximo",
-    ultra: "Ultra",
-    enterprise: "Enterprise",
-    mega: "MEGA",
+  const handleLogout = () => {
+    localStorage.clear();
+    window.location.href = "/";
   };
 
   return (
-    <div className="p-4 border-t border-sidebar-border space-y-3">
-      {currentUser?.isAdmin && (
-        <NavLink
-          to="/admin"
-          className={({ isActive }) =>
-            cn(
-              "flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-colors cursor-pointer",
-              isActive
-                ? "bg-accent text-accent-foreground"
-                : "text-yellow-500 hover:bg-sidebar-accent"
-            )
-          }
-        >
-          <ShieldCheck className="w-4 h-4" />
-          Painel Admin
-        </NavLink>
-      )}
-      {usage && !currentUser?.isAdmin && !isVendor && (
-        <div className="px-3 space-y-1">
-          <div className="flex justify-between text-xs text-sidebar-foreground/60">
-            <span>Plano {planLabel[usage.plan] ?? usage.plan}</span>
-            <span>{usage.used} / {usage.limit} cartelas</span>
-          </div>
-          <div className="h-1.5 bg-sidebar-border rounded-full overflow-hidden">
-            <div
-              className={cn(
-                "h-full rounded-full transition-all",
-                usage.used / usage.limit > 0.9
-                  ? "bg-destructive"
-                  : usage.used / usage.limit > 0.7
-                  ? "bg-yellow-500"
-                  : "bg-accent"
-              )}
-              style={{ width: `${Math.min(100, (usage.used / usage.limit) * 100)}%` }}
-            />
-          </div>
-        </div>
-      )}
-      {isVendor && (
-        <div className="px-3">
-          <span className="text-xs text-sidebar-foreground/50 font-medium">Perfil: Vendedor</span>
-        </div>
-      )}
-      <div className="flex items-center justify-between px-3">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold text-sidebar-foreground truncate">
-            {user?.profile.name ?? user?.profile.email ?? "Usuário"}
-          </p>
-          <p className="text-xs text-sidebar-foreground/50 truncate">
-            {user?.profile.email}
-          </p>
-        </div>
-        <Button
-          size="icon"
-          variant="ghost"
-          className="shrink-0 text-sidebar-foreground/50 hover:text-sidebar-foreground w-7 h-7"
-          onClick={() => void signout()}
-          title="Sair"
-        >
-          <LogOut className="w-3.5 h-3.5" />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-// Routes allowed for vendor role
-const VENDOR_ALLOWED_ROUTES = ["/meu-painel"];
-
-export default function AppLayout() {
-  const currentUser = useQuery(api.users.getCurrentUser);
-  const moduleStatus = useQuery(api.appSettings.getUserModuleStatus);
-  const isVendor = currentUser?.role === "vendor" && !currentUser?.isAdmin;
-  const hasVendorApp = currentUser?.isAdmin || (moduleStatus?.vendorApp.enabled ?? true);
-  const hasRifas = currentUser?.isAdmin || (moduleStatus?.rifas.enabled ?? true);
-
-  // Filter nav items based on module access
-  const filteredAdminNavItems = adminNavItems.filter((item) => {
-    if (item.to === "/lotes" || item.to === "/vendedores") return hasVendorApp;
-    if (item.to === "/rifas") return hasRifas;
-    return true;
-  });
-
-  const navItems = isVendor ? vendorNavItems : filteredAdminNavItems;
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  // Redirect vendor to their panel, and prevent access to admin routes
-  useEffect(() => {
-    if (!currentUser) return;
-    if (isVendor) {
-      const allowed = VENDOR_ALLOWED_ROUTES.some((r) => location.pathname.startsWith(r));
-      if (!allowed) {
-        void navigate("/meu-painel", { replace: true });
-      }
-    }
-  }, [isVendor, currentUser, location.pathname, navigate]);
-
-  return (
-    <div className="flex h-screen bg-background">
-      {/* Sidebar */}
-      <aside className="hidden md:flex flex-col w-64 bg-sidebar border-r border-sidebar-border">
-        <div className="p-6 border-b border-sidebar-border">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center shadow-lg">
-                <Trophy className="w-5 h-5 text-accent-foreground" />
-              </div>
-              <div>
-                <h1 className="font-black text-sidebar-foreground text-lg leading-tight">BINGO</h1>
-                <p className="text-sidebar-foreground/60 text-xs font-medium">Sistema Eletrônico</p>
-              </div>
+    <div className="flex min-h-screen bg-slate-950 font-sans text-slate-100 w-screen overflow-x-hidden">
+      {/* 💻 BARRA LATERAL ESQUERDA ESTILIZADA */}
+      <aside className="w-64 border-r border-slate-900 bg-[#0f0f1e]/40 p-5 flex flex-col justify-between shrink-0">
+        <div className="flex flex-col gap-6">
+          {/* Cabeçalho do App */}
+          <div className="flex items-center gap-3 border-b border-slate-900/60 pb-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-500 text-white shadow-lg shadow-rose-500/20">
+              <TrophyIcon className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="font-black text-sm tracking-widest text-white uppercase">BINGO</h2>
+              <span className="text-[10px] text-slate-400 block font-medium">Sistema Eletrônico</span>
             </div>
           </div>
-        </div>
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
-          {navItems.map(({ to, label, icon: Icon, exact }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={exact}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-semibold transition-colors cursor-pointer",
-                  isActive
-                    ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-                )
-              }
+
+          {/* Links de Navegação Forçados e Estabilizados */}
+          <nav className="flex flex-col gap-1">
+            
+            {/* 1. EVENTOS */}
+            <Link
+              to="/events"
+              className={`flex h-10 items-center gap-3 rounded-xl px-4 font-semibold text-sm transition-all ${location.pathname === "/events" ? "bg-rose-500 text-white shadow-md" : "text-slate-400 hover:bg-slate-900/50"}`}
             >
-              <Icon className="w-4 h-4" />
-              {label}
-            </NavLink>
-          ))}
-        </nav>
-        <Authenticated>
-          <UserInfo />
-        </Authenticated>
+              <CalendarIcon className="h-4 w-4 shrink-0" />
+              Eventos
+            </Link>
+
+             {/* 👑 2. CARTELAS REATIVADO COM ÍCONE BLINDADO CONTRA SUMIÇOS */}
+            <Link
+              to="/cartelas"
+              className={`flex h-10 items-center gap-3 rounded-xl px-4 font-semibold text-sm transition-all ${location.pathname === "/cartelas" ? "bg-rose-500 text-white shadow-md" : "text-slate-400 hover:bg-slate-900/50"}`}
+            >
+              {/* Mudado de CreditCardIcon para TrophyIcon ou LayersIcon que já existem no seu projeto */}
+              <TrophyIcon className="h-4 w-4 shrink-0 text-slate-500" />
+              Cartelas
+            </Link>
+
+            {/* 3. SORTEIO */}
+            <Link
+              to={idSorteioAtivo ? `/sorteio/${idSorteioAtivo}` : "/events"}
+              className={`flex h-10 items-center gap-3 rounded-xl px-4 font-semibold text-sm transition-all ${location.pathname.startsWith("/sorteio/") ? "bg-rose-500 text-white shadow-md" : "text-slate-400 hover:bg-slate-900/50"}`}
+            >
+              <DiscIcon className="h-4 w-4 shrink-0" />
+              Sorteio
+            </Link>
+
+            {/* 4. GIRO DA SORTE */}
+            <Link
+              to="/giro"
+              className={`flex h-10 items-center gap-3 rounded-xl px-4 font-semibold text-sm transition-all ${location.pathname === "/giro" ? "bg-rose-500 text-white shadow-md" : "text-slate-400 hover:bg-slate-900/50"}`}
+            >
+              <StarIcon className="h-4 w-4 shrink-0" />
+              Giro da Sorte
+            </Link>
+
+            {/* 5. VALIDAR */}
+            <Link
+              to={idSorteioAtivo ? `/validar/${idSorteioAtivo}` : "/events"}
+              className={`flex h-10 items-center gap-3 rounded-xl px-4 font-semibold text-sm transition-all ${location.pathname.startsWith("/validar/") ? "bg-rose-500 text-white shadow-md" : "text-slate-400 hover:bg-slate-900/50"}`}
+            >
+              <CheckSquareIcon className="h-4 w-4 shrink-0" />
+              Validar
+            </Link>
+
+            {/* 6. VENDEDORES */}
+            <Link
+              to="/vendors"
+              className={`flex h-10 items-center gap-3 rounded-xl px-4 font-semibold text-sm transition-all ${location.pathname === "/vendors" ? "bg-rose-500 text-white shadow-md" : "text-slate-400 hover:bg-slate-900/50"}`}
+            >
+              <UsersIcon className="h-4 w-4 shrink-0" />
+              Vendedores
+            </Link>
+
+            {/* 7. TRANSFERIR LOTES */}
+            <Link
+              to="/batches"
+              className={`flex h-10 items-center gap-3 rounded-xl px-4 font-semibold text-sm transition-all ${location.pathname === "/batches" ? "bg-rose-500 text-white shadow-md" : "text-slate-400 hover:bg-slate-900/50"}`}
+            >
+              <RefreshCwIcon className="h-4 w-4 shrink-0" />
+              Transferir Lotes
+            </Link>
+
+            {/* 8. RIFAS */}
+            <Link
+              to="/rifas"
+              className={`flex h-10 items-center gap-3 rounded-xl px-4 font-semibold text-sm transition-all ${location.pathname === "/rifas" ? "bg-rose-500 text-white shadow-md" : "text-slate-400 hover:bg-slate-900/50"}`}
+            >
+              <TicketIcon className="h-4 w-4 shrink-0" />
+              Rifas
+            </Link>
+
+            {/* 9. DESIGN CARTELA */}
+            <Link
+              to="/design-cartela"
+              className={`flex h-10 items-center gap-3 rounded-xl px-4 font-semibold text-sm transition-all ${location.pathname === "/design-cartela" ? "bg-rose-500 text-white shadow-md" : "text-slate-400 hover:bg-slate-900/50"}`}
+            >
+              <PaintbrushIcon className="h-4 w-4 shrink-0" />
+              Design Cartela
+            </Link>
+
+            {/* 10. RELATÓRIOS */}
+            <Link
+              to="/reports"
+              className={`flex h-10 items-center gap-3 rounded-xl px-4 font-semibold text-sm transition-all ${location.pathname === "/reports" ? "bg-rose-500 text-white shadow-md" : "text-slate-400 hover:bg-slate-900/50"}`}
+            >
+              <BarChart3Icon className="h-4 w-4 shrink-0" />
+              Relatórios
+            </Link>
+
+            {/* 11. DASHBOARD */}
+            <Link
+              to="/dashboard"
+              className={`flex h-10 items-center gap-3 rounded-xl px-4 font-semibold text-sm transition-all ${location.pathname === "/dashboard" ? "bg-rose-500 text-white shadow-md" : "text-slate-400 hover:bg-slate-900/50"}`}
+            >
+              <LayoutDashboardIcon className="h-4 w-4 shrink-0" />
+              Dashboard
+            </Link>
+
+            {/* 12. INFORMAÇÕES */}
+            <Link
+              to="/info"
+              className={`flex h-10 items-center gap-3 rounded-xl px-4 font-semibold text-sm transition-all ${location.pathname === "/info" ? "bg-rose-500 text-white shadow-md" : "text-slate-400 hover:bg-slate-900/50"}`}
+            >
+              <InfoIcon className="h-4 w-4 shrink-0" />
+              Informações
+            </Link>
+
+          </nav>
+        </div>
+
+        {/* Rodapé do Administrador */}
+        <div className="border-t border-slate-900 pt-4 flex flex-col gap-3">
+          <div className="flex items-center justify-between px-2">
+            <div>
+              <p className="text-xs font-bold text-slate-200 truncate">{user.name}</p>
+              <span className="text-[9px] font-bold text-amber-500 uppercase tracking-widest block mt-0.5">
+                👑 Painel Admin
+              </span>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="p-1.5 rounded-lg border border-slate-900 bg-slate-950 text-slate-500 hover:text-rose-400 transition-colors"
+              title="Encerrar Painel"
+            >
+              <LogOutIcon className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
       </aside>
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Mobile header */}
-        <header className="md:hidden flex items-center justify-between px-4 py-3 bg-sidebar border-b border-sidebar-border">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
-              <Trophy className="w-4 h-4 text-accent-foreground" />
-            </div>
-            <span className="font-black text-sidebar-foreground text-base">BINGO</span>
-          </div>
-        </header>
-
-        <main className="flex-1 overflow-auto pb-20 md:pb-0">
-          <Outlet />
-        </main>
-
-        {/* Bottom nav mobile */}
-        <nav className="fixed bottom-0 left-0 right-0 flex md:hidden bg-sidebar border-t border-sidebar-border z-40">
-          {navItems.map(({ to, label, icon: Icon, exact }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={exact}
-              className={({ isActive }) =>
-                cn(
-                  "flex-1 flex flex-col items-center gap-1 py-2 text-xs font-semibold transition-colors cursor-pointer",
-                  isActive
-                    ? "text-sidebar-primary"
-                    : "text-sidebar-foreground/50 hover:text-sidebar-foreground"
-                )
-              }
-            >
-              <Icon className="w-5 h-5" />
-              {label}
-            </NavLink>
-          ))}
-        </nav>
-      </div>
+      {/* 📑 ÁREA DE CONTEÚDO PRINCIPAL DINÂMICO */}
+      <main className="flex-1 overflow-y-auto bg-slate-950 p-6 no-print">
+        {children}
+      </main>
     </div>
   );
 }

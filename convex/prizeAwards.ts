@@ -1,100 +1,68 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { query, mutation } from "./_generated/server";
 import { ConvexError } from "convex/values";
 
-export const listByEvent = query({
-  args: { eventId: v.id("events") },
-  handler: async (ctx, args) => {
+/**
+ * 📊 QUERY: Listar todas as premiações declaradas
+ * Exibe o histórico de cartelas contempladas e o status de entrega do prêmio.
+ */
+export const list = query({
+  args: {},
+  handler: async (ctx: any) => {
     return await ctx.db
-      .query("prizeAwards")
-      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+      .query("prizeAwards" as any)
+      .order("desc")
       .collect();
   },
 });
 
-export const award = mutation({
+/**
+ * 🏆 MUTATION: Conceder Prêmio / Declarar Ganhador
+ * Registra o felizardo que completou a cartela (Bingo, Linha ou Giro da Sorte)
+ */
+export const awardPrize = mutation({
   args: {
-    eventId: v.id("events"),
-    prizePosition: v.number(),
-    prizeDescription: v.string(),
-    winnerCardNumber: v.number(),
-    winnerName: v.optional(v.string()),
+    eventId: v.string(),       // ID do sorteio em andamento
+    userId: v.string(),        // ID do jogador vencedor
+    cardId: v.optional(v.string()), // ID da cartela premiada (se aplicável)
+    prizeDescription: v.string(),   // O que ele ganhou (Ex: Moto 0KM, R$ 500 no PIX)
   },
-  handler: async (ctx, args) => {
-    // Prevent duplicate award for same prize position
-    const existing = await ctx.db
-      .query("prizeAwards")
-      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
-      .collect();
-    if (existing.find((a) => a.prizePosition === args.prizePosition)) {
-      throw new ConvexError({ message: "Este prêmio já foi concedido", code: "CONFLICT" });
-    }
-    await ctx.db.insert("prizeAwards", {
-      ...args,
-      awardedAt: new Date().toISOString(),
+  handler: async (ctx: any, args) => {
+    // Insere o registro mestre de premiação de forma dinâmica na nuvem
+    const awardId = await ctx.db.insert("prizeAwards" as any, {
+      eventId: args.eventId,
+      userId: args.userId,
+      cardId: args.cardId || "GIRO-IMEDIATO",
+      prizeDescription: args.prizeDescription,
+      status: "pending", // Status padrão inicia como "pendente" para o administrador auditar
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
     });
+
+    return awardId;
   },
 });
 
-export const remove = mutation({
-  args: { awardId: v.id("prizeAwards") },
-  handler: async (ctx, args) => {
-    await ctx.db.delete(args.awardId);
-  },
-});
-
-export const removeByPosition = mutation({
-  args: { eventId: v.id("events"), prizePosition: v.number() },
-  handler: async (ctx, args) => {
-    const awards = await ctx.db
-      .query("prizeAwards")
-      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
-      .collect();
-    const target = awards.find((a) => a.prizePosition === args.prizePosition);
-    if (target) await ctx.db.delete(target._id);
-  },
-});
-
-// Award prize to multiple winners (tie-share). Bypasses duplicate-position guard.
-export const awardTie = mutation({
+/**
+ * 📦 MUTATION: Atualizar o Status de Entrega do Prêmio
+ * Permite que o administrador altere o status para "pago" ou "entregue"
+ */
+export const updateStatus = mutation({
   args: {
-    eventId: v.id("events"),
-    prizePosition: v.number(),
-    prizeDescription: v.string(),
-    winners: v.array(v.object({
-      winnerCardNumber: v.number(),
-      winnerName: v.optional(v.string()),
-    })),
+    awardId: v.id("prizeAwards" as any),
+    status: v.string(), // "pending", "paid", "delivered", "canceled"
   },
-  handler: async (ctx, args) => {
-    // Remove any existing award for this position first
-    const existing = await ctx.db
-      .query("prizeAwards")
-      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
-      .collect();
-    for (const a of existing.filter((a) => a.prizePosition === args.prizePosition)) {
-      await ctx.db.delete(a._id);
+  handler: async (ctx: any, args) => {
+    const existing = await ctx.db.get(args.awardId);
+    if (!existing) {
+      throw new ConvexError("Registro de premiação não localizado no servidor.");
     }
-    for (const w of args.winners) {
-      await ctx.db.insert("prizeAwards", {
-        eventId: args.eventId,
-        prizePosition: args.prizePosition,
-        prizeDescription: args.prizeDescription,
-        winnerCardNumber: w.winnerCardNumber,
-        winnerName: w.winnerName,
-        awardedAt: new Date().toISOString(),
-      });
-    }
-  },
-});
 
-export const removeAllByEvent = mutation({
-  args: { eventId: v.id("events") },
-  handler: async (ctx, args) => {
-    const awards = await ctx.db
-      .query("prizeAwards")
-      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
-      .collect();
-    for (const a of awards) await ctx.db.delete(a._id);
+    await ctx.db.patch(args.awardId, {
+      status: args.status,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
   },
 });

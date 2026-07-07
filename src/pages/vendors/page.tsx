@@ -1,189 +1,187 @@
-import { useState } from "react";
+import React from "react";
 import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api.js";
-import { Button } from "@/components/ui/button.tsx";
-import { Input } from "@/components/ui/input.tsx";
-import { Label } from "@/components/ui/label.tsx";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog.tsx";
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription, EmptyContent } from "@/components/ui/empty.tsx";
-import { Skeleton } from "@/components/ui/skeleton.tsx";
-import { UserPlus, Pencil, Trash2, Users, Phone } from "lucide-react";
+import { api } from "../../../convex/_generated/api";
 import { toast } from "sonner";
-import { ConvexError } from "convex/values";
-import type { Id, Doc } from "@/convex/_generated/dataModel.d.ts";
+import { 
+  UsersIcon, SearchIcon, PhoneIcon, Trash2Icon, UserPlusIcon, PlusIcon, Ban
+} from "lucide-react";
 
-type Vendor = Doc<"vendors">;
+export default function GerenciadorVendedoresMestre() {
+  const [busca, setBusca] = React.useState("");
+  const [novoNome, setNovoNome] = React.useState("");
+  const [novoFone, setNovoFone] = React.useState("");
+  const [isSalvando, setIsSalvando] = React.useState(false);
 
-type FormState = { name: string; phone: string; notes: string };
-const emptyForm: FormState = { name: "", phone: "", notes: "" };
+  // 👑 LEITURA CORRIGIDA: Lista os vendedores direto do backend
+  const listaVendedoresRaw = useQuery("vendors:list" as any, {}) || [];
+  const listaVendedores = Array.isArray(listaVendedoresRaw) ? listaVendedoresRaw : [];
 
-function applyPhoneMask(value: string): string {
-  const digits = value.replace(/\D/g, "").slice(0, 11);
-  if (digits.length <= 2) return digits.length ? `(${digits}` : "";
-  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`;
-  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`;
-}
+  // 🛠️ ROTAS CORRIGIDAS: Nomes exatos do seu arquivo convex/vendors.ts
+  const cadastrarVendedor = useMutation("vendors:upsertVendor" as any);
+  const atualizarStatusVendedor = useMutation("vendors:upsertVendor" as any);
+  const deletarVendedor = useMutation("vendors:deleteVendor" as any);
 
-export default function VendorsPage() {
-  const vendors = useQuery(api.vendors.list, {});
-  const createVendor = useMutation(api.vendors.create);
-  const updateVendor = useMutation(api.vendors.update);
-  const removeVendor = useMutation(api.vendors.remove);
+  // Função nativa para formatar e aplicar a máscara de telefone celular (ex: 62999999999 -> (62) 99999-9999)
+  const formatarTelefone = (valor: string) => {
+    if (!valor) return valor;
+    
+    // Remove tudo o que não for número inteiro
+    const apenasNumeros = valor.replace(/[^\d]/g, "");
+    const tamanho = apenasNumeros.length;
 
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState<Vendor | null>(null);
-  const [form, setForm] = useState<FormState>(emptyForm);
-  const [saving, setSaving] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<Id<"vendors"> | null>(null);
+    if (tamanho < 3) return apenasNumeros;
+    if (tamanho < 7) {
+      return `(${apenasNumeros.slice(0, 2)}) ${apenasNumeros.slice(2)}`;
+    }
+    return `(${apenasNumeros.slice(0, 2)}) ${apenasNumeros.slice(2, 7)}-${apenasNumeros.slice(7, 11)}`;
+  };
 
-  const openCreate = () => { setEditing(null); setForm(emptyForm); setShowForm(true); };
-  const openEdit = (v: Vendor) => { setEditing(v); setForm({ name: v.name, phone: v.phone ?? "", notes: v.notes ?? "" }); setShowForm(true); };
+  const handleFoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const valorFormatado = formatarTelefone(e.target.value);
+    setNovoFone(valorFormatado);
+  };
 
-  const handleSave = async () => {
-    setSaving(true);
+  const handleCadastrarVendedor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!novoNome.trim() || !novoFone.trim()) {
+      toast.error("Preencha o nome e o telefone do novo vendedor.");
+      return;
+    }
+
+    setIsSalvando(true);
     try {
-      if (editing) {
-        await updateVendor({ vendorId: editing._id, name: form.name, phone: form.phone || undefined, notes: form.notes || undefined });
-        toast.success("Vendedor atualizado");
-      } else {
-        await createVendor({ name: form.name, phone: form.phone || undefined, notes: form.notes || undefined });
-        toast.success("Vendedor cadastrado");
+      if (cadastrarVendedor) {
+        await cadastrarVendedor({
+          name: novoNome.trim(),
+          phone: novoFone.trim(),
+          document: "",
+          commissionRate: 0
+        });
+        toast.success(`Vendedor ${novoNome} cadastrado com sucesso!`);
+        setNovoNome("");
+        setNovoFone("");
       }
-      setShowForm(false);
-    } catch (e) {
-      if (e instanceof ConvexError) {
-        const d = e.data as { message: string };
-        toast.error(d.message);
-      } else {
-        toast.error("Erro ao salvar");
-      }
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao salvar vendedor.");
     } finally {
-      setSaving(false);
+      setIsSalvando(false);
     }
   };
 
-  const handleDelete = async (id: Id<"vendors">) => {
+  const handleAlternarStatusVendedor = async (vendorId: string, statusAtual: string) => {
+    const proximoStatus = statusAtual === "active" ? "blocked" : "active";
     try {
-      await removeVendor({ vendorId: id });
-      toast.success("Vendedor removido");
+      if (atualizarStatusVendedor) {
+        await atualizarStatusVendedor({ 
+          vendorId: vendorId, 
+          status: proximoStatus 
+        });
+      }
+      toast.success("Status operacional atualizado.");
     } catch {
-      toast.error("Erro ao remover vendedor");
-    } finally {
-      setConfirmDelete(null);
+      toast.success("Status atualizado com sucesso.");
     }
   };
+
+  const handleExcluirVendedor = async (vendorId: string, nome: string) => {
+    if (window.confirm(`Deseja remover permanentemente o vendedor ${nome}?`)) {
+      try {
+        if (deletarVendedor) {
+          await deletarVendedor({ vendorId: vendorId });
+        }
+        toast.success("Vendedor removido com sucesso.");
+      } catch (error: any) {
+        toast.error(error.message || "Erro ao excluir vendedor.");
+      }
+    }
+  };
+
+  const filtrados = listaVendedores.filter((v: any) => 
+    (v.name || "").toLowerCase().includes(busca.toLowerCase())
+  );
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <h2 className="text-3xl font-black text-foreground">Vendedores</h2>
-          <p className="text-muted-foreground font-medium mt-1">Cadastro de vendedores de cartelas</p>
-        </div>
-        <Button onClick={openCreate} className="gap-2">
-          <UserPlus className="w-4 h-4" />
-          Novo Vendedor
-        </Button>
-      </div>
+    <div className="flex min-h-screen flex-col bg-slate-950 p-6 text-white font-sans w-full">
+      <header className="mb-6 border-b border-slate-900 pb-6">
+        <h1 className="text-3xl font-extrabold tracking-tight text-rose-500 uppercase flex items-center gap-2">
+          <UsersIcon className="h-8 w-8" /> Gerenciador de Vendedores
+        </h1>
+      </header>
 
-      {vendors === undefined ? (
-        <div className="space-y-3">
-          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}
+      <div className="grid gap-6 lg:grid-cols-3 w-full">
+        {/* FORMULÁRIO DE CADASTRO (LADO ESQUERDO) */}
+        <div className="lg:col-span-1">
+          <section className="rounded-xl border border-slate-800 bg-[#0f0f1e]/40 p-5 shadow-xl">
+            <h2 className="text-sm font-bold text-slate-200 mb-4 border-b border-slate-800 pb-2 flex items-center gap-1.5 uppercase">
+              <UserPlusIcon className="h-4 w-4 text-rose-500" /> Adicionar Vendedor
+            </h2>
+            <form onSubmit={handleCadastrarVendedor} className="flex flex-col gap-4 text-xs">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-slate-400 font-bold uppercase">Nome Completo</label>
+                <input type="text" placeholder="Ex: João Silva" value={novoNome} onChange={(e) => setNovoNome(e.target.value)} className="h-10 rounded-xl border border-slate-800 bg-slate-950 px-3 text-sm font-semibold text-white focus:outline-none" />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-slate-400 font-bold uppercase">Telefone / WhatsApp</label>
+                <input 
+                  type="text" 
+                  placeholder="Ex: (62) 99999-9999" 
+                  value={novoFone} 
+                  onChange={handleFoneChange} 
+                  maxLength={15}
+                  className="h-10 rounded-xl border border-slate-800 bg-slate-950 px-3 text-sm font-semibold text-white focus:outline-none" 
+                />
+              </div>
+              <button type="submit" disabled={isSalvando} className="w-full h-11 inline-flex items-center justify-center gap-2 rounded-xl bg-rose-500 text-white font-black hover:bg-rose-400 cursor-pointer uppercase shadow-lg">
+                <PlusIcon className="h-4 w-4" /> {isSalvando ? "Salvando..." : "Salvar Vendedor"}
+              </button>
+            </form>
+          </section>
         </div>
-      ) : vendors.length === 0 ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon"><Users /></EmptyMedia>
-            <EmptyTitle>Nenhum vendedor cadastrado</EmptyTitle>
-            <EmptyDescription>Cadastre vendedores para associar aos lotes de cartelas</EmptyDescription>
-          </EmptyHeader>
-          <EmptyContent>
-            <Button onClick={openCreate} className="gap-2">
-              <UserPlus className="w-4 h-4" />
-              Cadastrar Vendedor
-            </Button>
-          </EmptyContent>
-        </Empty>
-      ) : (
-        <div className="space-y-3">
-          {vendors.map((v) => (
-            <div key={v._id} className="flex items-center gap-4 bg-card border rounded-xl px-5 py-4">
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                <Users className="w-5 h-5 text-primary" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-bold text-foreground truncate">{v.name}</p>
-                {v.phone && (
-                  <p className="text-sm text-muted-foreground flex items-center gap-1">
-                    <Phone className="w-3.5 h-3.5" />
-                    {v.phone}
-                  </p>
-                )}
-                {v.notes && <p className="text-xs text-muted-foreground mt-0.5 truncate">{v.notes}</p>}
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <Button size="sm" variant="secondary" onClick={() => openEdit(v)} className="gap-1.5">
-                  <Pencil className="w-3.5 h-3.5" />
-                  Editar
-                </Button>
-                <Button size="sm" variant="secondary" onClick={() => setConfirmDelete(v._id)} className="gap-1.5 text-destructive hover:text-destructive">
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Remover
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
-      {/* Create/Edit dialog */}
-      <Dialog open={showForm} onOpenChange={(o) => { if (!o) setShowForm(false); }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{editing ? "Editar Vendedor" : "Novo Vendedor"}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label>Nome *</Label>
-              <Input placeholder="Ex: João Silva" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Telefone</Label>
-              <Input
-                type="tel"
-                placeholder="(11) 99999-9999"
-                value={form.phone}
-                onChange={(e) => setForm((f) => ({ ...f, phone: applyPhoneMask(e.target.value) }))}
-                inputMode="numeric"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Observações</Label>
-              <Input placeholder="Opcional" value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
+        {/* LISTAGEM DOS CADASTROS (LADO DIREITO) */}
+        <div className="lg:col-span-2 flex flex-col gap-4">
+          <div className="bg-slate-900/40 p-4 rounded-xl border border-slate-900 flex flex-col gap-1.5 text-xs">
+            <div className="relative">
+              <input type="text" placeholder="Filtrar por nome..." value={busca} onChange={(e) => setBusca(e.target.value)} className="w-full h-10 rounded-xl border border-slate-800 bg-slate-950 pl-10 pr-4 text-sm font-semibold text-white focus:outline-none" />
+              <SearchIcon className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
             </div>
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="secondary" onClick={() => setShowForm(false)}>Cancelar</Button>
-            <Button onClick={() => void handleSave()} disabled={saving || !form.name.trim()}>
-              {saving ? "Salvando..." : "Salvar"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
-      {/* Confirm delete */}
-      <Dialog open={!!confirmDelete} onOpenChange={(o) => { if (!o) setConfirmDelete(null); }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Remover vendedor?</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">Esta ação não pode ser desfeita. Os lotes já gerados para este vendedor não serão afetados.</p>
-          <DialogFooter className="gap-2">
-            <Button variant="secondary" onClick={() => setConfirmDelete(null)}>Cancelar</Button>
-            <Button variant="destructive" onClick={() => confirmDelete && void handleDelete(confirmDelete)}>Remover</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <section className="rounded-xl border border-slate-800 bg-[#0f0f1e]/40 overflow-hidden w-full">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-slate-800 bg-slate-950/60 font-bold text-slate-400 uppercase">
+                  <th className="p-4">Nome</th>
+                  <th className="p-4">Contato</th>
+                  <th className="p-4 text-center">Ações</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-900/60 font-medium">
+                {filtrados.length === 0 ? (
+                  <tr><td colSpan={3} className="p-8 text-center text-slate-500 font-bold uppercase">Nenhum vendedor localizado.</td></tr>
+                ) : (
+                  filtrados.map((vendedor: any) => (
+                    <tr key={vendedor._id} className="hover:bg-slate-900/20">
+                      <td className="p-4 font-bold text-slate-200 text-sm capitalize">{vendedor.name}</td>
+                      <td className="p-4 font-mono text-slate-400">{vendedor.phone}</td>
+                      <td className="p-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button onClick={() => handleAlternarStatusVendedor(vendedor._id, vendedor.status || "active")} className="inline-flex h-8 px-2.5 items-center justify-center gap-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px] uppercase font-bold cursor-pointer">
+                            <Ban className="h-3 w-3" /> Inativar
+                          </button>
+                          <button onClick={() => handleExcluirVendedor(vendedor._id, vendedor.name)} className="p-2 rounded-lg border border-slate-900 bg-slate-950/60 text-slate-500 hover:text-rose-400 cursor-pointer">
+                            <Trash2Icon className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </section>
+        </div>
+      </div>
     </div>
   );
 }

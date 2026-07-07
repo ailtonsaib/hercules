@@ -1,128 +1,89 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { query, mutation } from "./_generated/server";
 import { ConvexError } from "convex/values";
 
-export const get = query({
-  args: { eventId: v.id("events") },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("draws")
-      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
-      .unique();
+/**
+ * 📊 QUERY: Monitorar o estado atual do sorteio de um evento
+ * Retorna a lista de números que já saíram do globo para o telão exibir
+ */
+export const getDrawState = query({
+  args: { eventId: v.string() },
+  handler: async (ctx: any, args) => {
+    const draw = await ctx.db
+      .query("draws" as any)
+      .filter((q: any) => q.eq(q.field("eventId"), args.eventId))
+      .first();
+
+    if (!draw) {
+      return { numbers: [], lastNumber: null, isFinished: false };
+    }
+
+    return draw;
   },
 });
 
-export const init = mutation({
-  args: { eventId: v.id("events") },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("draws")
-      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
-      .unique();
-    if (existing) return existing._id;
-    return await ctx.db.insert("draws", {
-      eventId: args.eventId,
-      drawnNumbers: [],
-      lastDrawn: undefined,
-    });
-  },
-});
-
+/**
+ * 🎰 MUTATION: Registrar o sorteio de uma nova bola no Globo
+ * Persiste a dezena cantada no banco de dados para sincronizar com todos os jogadores
+ */
 export const drawNumber = mutation({
-  args: { eventId: v.id("events") },
-  handler: async (ctx, args) => {
-    const draw = await ctx.db
-      .query("draws")
-      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
-      .unique();
+  args: {
+    eventId: v.string(),
+    number: v.number(),
+  },
+  handler: async (ctx: any, args) => {
+    // 1. Busca se já existe um sorteio em andamento para este evento
+    const existingDraw = await ctx.db
+      .query("draws" as any)
+      .filter((q: any) => q.eq(q.field("eventId"), args.eventId))
+      .first();
 
-    if (!draw) throw new ConvexError({ message: "Sorteio não iniciado", code: "NOT_FOUND" });
+    if (existingDraw) {
+      // Evita duplicar o mesmo número no histórico do jogo
+      if (existingDraw.numbers.includes(args.number)) {
+        return existingDraw._id;
+      }
 
-    const allNumbers = Array.from({ length: 75 }, (_, i) => i + 1);
-    const remaining = allNumbers.filter((n) => !draw.drawnNumbers.includes(n));
+      const updatedNumbers = [...existingDraw.numbers, args.number];
 
-    if (remaining.length === 0) {
-      throw new ConvexError({ message: "Todos os números já foram sorteados", code: "CONFLICT" });
+      await ctx.db.patch(existingDraw._id, {
+        numbers: updatedNumbers,
+        lastNumber: args.number,
+        updatedAt: Date.now(),
+      });
+
+      return existingDraw._id;
+    } else {
+      // Se for a primeira bola da rodada, insere um novo registro de sorteio
+      const newDrawId = await ctx.db.insert("draws" as any, {
+        eventId: args.eventId,
+        numbers: [args.number],
+        lastNumber: args.number,
+        isFinished: false,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      return newDrawId;
     }
-
-    const randomIdx = Math.floor(Math.random() * remaining.length);
-    const picked = remaining[randomIdx];
-    const newDrawn = [...draw.drawnNumbers, picked];
-
-    await ctx.db.patch(draw._id, {
-      drawnNumbers: newDrawn,
-      lastDrawn: picked,
-    });
-
-    return picked;
   },
 });
 
-export const undoLast = mutation({
-  args: { eventId: v.id("events") },
-  handler: async (ctx, args) => {
+/**
+ * 🔄 MUTATION: Reiniciar o Globo / Limpar Sorteio
+ */
+export const resetDraw = mutation({
+  args: { eventId: v.string() },
+  handler: async (ctx: any, args) => {
     const draw = await ctx.db
-      .query("draws")
-      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
-      .unique();
+      .query("draws" as any)
+      .filter((q: any) => q.eq(q.field("eventId"), args.eventId))
+      .first();
 
-    if (!draw || draw.drawnNumbers.length === 0) {
-      throw new ConvexError({ message: "Nenhum número para desfazer", code: "BAD_REQUEST" });
+    if (draw) {
+      await ctx.db.delete(draw._id);
     }
 
-    const newDrawn = draw.drawnNumbers.slice(0, -1);
-    await ctx.db.patch(draw._id, {
-      drawnNumbers: newDrawn,
-      lastDrawn: newDrawn.length > 0 ? newDrawn[newDrawn.length - 1] : undefined,
-    });
-
-    return draw.drawnNumbers[draw.drawnNumbers.length - 1];
-  },
-});
-
-export const drawSpecific = mutation({
-  args: { eventId: v.id("events"), number: v.number() },
-  handler: async (ctx, args) => {
-    if (args.number < 1 || args.number > 75) {
-      throw new ConvexError({ message: "Número inválido. Digite entre 1 e 75.", code: "BAD_REQUEST" });
-    }
-    const draw = await ctx.db
-      .query("draws")
-      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
-      .unique();
-    if (!draw) throw new ConvexError({ message: "Sorteio não iniciado", code: "NOT_FOUND" });
-    if (draw.drawnNumbers.includes(args.number)) {
-      throw new ConvexError({ message: `Número ${args.number} já foi sorteado`, code: "CONFLICT" });
-    }
-    const newDrawn = [...draw.drawnNumbers, args.number];
-    await ctx.db.patch(draw._id, { drawnNumbers: newDrawn, lastDrawn: args.number });
-    return args.number;
-  },
-});
-
-export const toggleSalesBlock = mutation({
-  args: { eventId: v.id("events") },
-  handler: async (ctx, args) => {
-    const draw = await ctx.db
-      .query("draws")
-      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
-      .unique();
-    if (!draw) throw new ConvexError({ message: "Sorteio não iniciado", code: "NOT_FOUND" });
-    await ctx.db.patch(draw._id, { salesBlocked: !draw.salesBlocked });
-    return !draw.salesBlocked;
-  },
-});
-
-export const reset = mutation({
-  args: { eventId: v.id("events") },
-  handler: async (ctx, args) => {
-    const draws = await ctx.db
-      .query("draws")
-      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
-      .collect();
-
-    for (const draw of draws) {
-      await ctx.db.patch(draw._id, { drawnNumbers: [], lastDrawn: undefined });
-    }
+    return { success: true };
   },
 });

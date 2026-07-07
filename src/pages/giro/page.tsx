@@ -1,341 +1,191 @@
-import { useState, useEffect, useRef } from "react";
+import React from "react";
 import { useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api.js";
-import { Button } from "@/components/ui/button.tsx";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select.tsx";
-import { Badge } from "@/components/ui/badge.tsx";
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty.tsx";
-import { Skeleton } from "@/components/ui/skeleton.tsx";
-import { motion, AnimatePresence } from "motion/react";
-import { Shuffle, Trophy, RotateCcw, Users, CheckCircle2, Star } from "lucide-react";
-import type { Id } from "@/convex/_generated/dataModel.d.ts";
+import { api } from "../../../convex/_generated/api";
+import { toast } from "sonner";
+import { StarIcon, TrophyIcon, HelpCircleIcon, RefreshCwIcon, UserIcon } from "lucide-react";
 
-type EligibleCard = {
-  _id: Id<"cards">;
-  cardNumber: number;
-  buyerName?: string;
-  buyerPhone?: string;
-};
+export default function GiroSortePage() {
+  const token = localStorage.getItem("hercules_session_token") || localStorage.getItem("token") || "";
 
-const SPIN_DURATION = 3000; // ms
-const TICK_INTERVAL_START = 60;
-const TICK_INTERVAL_END = 300;
+  // 1. Estados de controle do sorteio e animações
+  const [eventoSelecionado, setEventoSelecionado] = React.useState("");
+  const [isGirando, setIsGirando] = React.useState(false);
+  const [numeroExibido, setNumeroExibido] = React.useState("000000");
+  const [ganhadorConfirmado, setGanhadorConfirmado] = React.useState<any>(null);
 
-function useTickingNumber(
-  eligible: EligibleCard[],
-  spinning: boolean,
-  onDone: (card: EligibleCard) => void
-) {
-  const [display, setDisplay] = useState<number | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const startRef = useRef<number>(0);
-  const pickedRef = useRef<EligibleCard | null>(null);
+  // 2. Busca a lista de sorteios disponíveis
+  const eventos = useQuery(api.events.list, { token }) || [];
 
-  useEffect(() => {
-    if (!spinning || eligible.length === 0) return;
+  // Puxa automaticamente o último ID do cache do sistema se não houver um selecionado
+  React.useEffect(() => {
+    if (eventos.length > 0 && !eventoSelecionado) {
+      const lastId = localStorage.getItem("hercules_last_event_id");
+      const existe = eventos.some((e: any) => e._id === lastId);
+      setEventoSelecionado(existe && lastId ? lastId : eventos[0]._id);
+    }
+  }, [eventos, eventoSelecionado]);
 
-    // Pick winner immediately but reveal at end
-    const winner = eligible[Math.floor(Math.random() * eligible.length)];
-    pickedRef.current = winner;
-    startRef.current = Date.now();
+  // 👑 TRANCA DE SEGURANÇA: O Giro busca apenas cartelas reais que foram vendidas E validadas
+  const cartelasAptas = useQuery(api.cards.getValidatedCardsForDraw, { eventId: eventoSelecionado }) || [];
 
-    let tick = TICK_INTERVAL_START;
+  // Efeito visual de roleta (números mudando rapidamente antes de fixar o ganhador)
+  const executarEfeitoGiro = (numeroFinal: string, callbackGanhador: () => void) => {
+    let duracao = 0;
+    const intervalo = setInterval(() => {
+      // Gera números aleatórios de 6 dígitos piscando na tela
+      const numeroFalso = String(Math.floor(Math.random() * 999999)).padStart(6, "0");
+      setNumeroExibido(numeroFalso);
+      duracao += 80;
 
-    const step = () => {
-      const elapsed = Date.now() - startRef.current;
-      const progress = Math.min(elapsed / SPIN_DURATION, 1);
-
-      // Show random number during spin
-      const randomCard = eligible[Math.floor(Math.random() * eligible.length)];
-      setDisplay(randomCard.cardNumber);
-
-      if (progress < 1) {
-        // Ease out — gradually slow ticking
-        tick = TICK_INTERVAL_START + (TICK_INTERVAL_END - TICK_INTERVAL_START) * progress;
-        timerRef.current = setTimeout(step, tick);
-      } else {
-        // Reveal winner
-        setDisplay(winner.cardNumber);
-        onDone(winner);
+      // Após 3 segundos de suspense, encerra a animação e fixa o verdadeiro premiado
+      if (duracao >= 3000) {
+        clearInterval(intervalo);
+        setNumeroExibido(numeroFinal);
+        callbackGanhador();
+        setIsGirando(false);
       }
-    };
-
-    timerRef.current = setTimeout(step, tick);
-
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [spinning]);
-
-  return display;
-}
-
-export default function GiroPage() {
-  const events = useQuery(api.events.list, {});
-  const [selectedEvent, setSelectedEvent] = useState<string>("");
-  const eventId = selectedEvent as Id<"events">;
-
-  const eligible = useQuery(
-    api.cards.listEligibleForGiro,
-    selectedEvent ? { eventId } : "skip"
-  );
-
-  const [spinning, setSpinning] = useState(false);
-  const [winner, setWinner] = useState<EligibleCard | null>(null);
-  const [history, setHistory] = useState<EligibleCard[]>([]);
-
-  const handleDone = (card: EligibleCard) => {
-    setSpinning(false);
-    setWinner(card);
-    setHistory((prev) => [card, ...prev]);
+    }, 80);
   };
 
-  const displayNumber = useTickingNumber(eligible ?? [], spinning, handleDone);
+  const handleIniciarGiro = () => {
+    if (cartelasAptas.length === 0) {
+      toast.error("Não há nenhuma cartela validada e apta para o sorteio neste evento.");
+      return;
+    }
 
-  const handleSpin = () => {
-    if (!eligible || eligible.length === 0) return;
-    setWinner(null);
-    setSpinning(true);
+    setIsGirando(true);
+    setGanhadorConfirmado(null);
+
+    // 🎯 SORTEIO RANDÔMICO DIRETO NO VETOR: Seleciona um índice aleatório das cartelas validadas
+    const indiceSorteado = Math.floor(Math.random() * cartelasAptas.length);
+    const cartelaVencedora: any = cartelasAptas[indiceSorteado];
+    
+    // Filtra o número limpo para o display gigante (Ex: CRT-000125 -> 000125)
+    const numeroLimpo = cartelaVencedora.serialNumber.replace("CRT-", "");
+
+    // Dispara a roleta visual na tela
+    executarEfeitoGiro(numeroLimpo, () => {
+      const fone = String(cartelaVencedora.buyerPhone || "0000");
+      setGanhadorConfirmado({
+        numero: numeroLimpo,
+        nome: cartelaVencedora.buyerName || "Comprador Anônimo",
+        vendedor: cartelaVencedora.vendorName || "Estoque Central",
+        finalFone: fone.substring(fone.length - 4)
+      });
+      toast.success(`🏆 Cartela Nº ${numeroLimpo} faturou o Giro da Sorte!`);
+    });
   };
-
-  const handleReset = () => {
-    setWinner(null);
-    setHistory([]);
-  };
-
-  const currentDisplay = spinning ? displayNumber : winner?.cardNumber ?? null;
-
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-8">
-      {/* Header */}
-      <div>
-        <h2 className="text-3xl font-black text-foreground flex items-center gap-3">
-          <Shuffle className="w-8 h-8 text-primary" />
-          Giro da Sorte
-        </h2>
-        <p className="text-muted-foreground font-medium mt-1">
-          Sorteia uma cartela dentre as pagas e validadas
-        </p>
+    <div className="flex min-h-screen flex-col bg-slate-950 p-6 text-white font-sans w-full">
+      {/* Cabeçalho */}
+      <header className="mb-6 border-b border-slate-900 pb-6">
+        <h1 className="text-3xl font-extrabold tracking-tight text-amber-500 uppercase flex items-center gap-2">
+          <StarIcon className="h-8 w-8 text-amber-500 animate-spin [animation-duration:10s]" />
+          Giro da Sorte Eletrônico
+        </h1>
+        <p className="text-slate-400 mt-1">Premiação rápida por sorteio direto do número de série das cartelas auditadas.</p>
+      </header>
+
+      {/* Seletor de Eventos Oculto em Card Compacto */}
+      <div className="mb-6 bg-slate-900/30 p-4 rounded-xl border border-slate-900 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex flex-col gap-1 text-xs w-full sm:w-72">
+          <span className="text-slate-500 font-bold uppercase tracking-wider">Sorteio Vinculado</span>
+          <select 
+            value={eventoSelecionado} 
+            onChange={(e) => {
+              setEventoSelecionado(e.target.value);
+              setGanhadorConfirmado(null);
+              setNumeroExibido("000000");
+            }} 
+            className="h-9 rounded-lg border border-slate-800 bg-slate-950 px-2 font-semibold text-slate-200 focus:outline-none"
+          >
+            <option value="">-- Escolha o Sorteio --</option>
+            {eventos.map((ev: any) => <option key={ev._id} value={ev._id}>{ev.title}</option>)}
+          </select>
+        </div>
+        <div className="text-right text-xs text-slate-500 font-mono shrink-0">
+          Cartelas Auditadas no Globo: <strong className="text-amber-400">{cartelasAptas.length}</strong>
+        </div>
       </div>
 
-      {/* Event selector */}
-      <div className="max-w-xs space-y-1.5">
-        <label className="text-sm font-semibold text-foreground">Selecionar Evento</label>
-        <Select value={selectedEvent} onValueChange={(v) => { setSelectedEvent(v); setWinner(null); setHistory([]); }}>
-          <SelectTrigger>
-            <SelectValue placeholder="Escolha um evento..." />
-          </SelectTrigger>
-          <SelectContent>
-            {events?.map((e) => (
-              <SelectItem key={e._id} value={e._id}>{e.name}</SelectItem>
+      {/* GRID CENTRALIZADO DA ROLETA */}
+      <div className="grid gap-6 md:grid-cols-3 items-center my-auto max-w-4xl mx-auto w-full">
+        
+        {/* COLUNA DO PAINEL DA ROLETA GIGANTE */}
+        <div className="md:col-span-2 flex flex-col items-center gap-6 bg-slate-900/20 border border-slate-900 rounded-3xl p-8 shadow-2xl relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500/0 via-amber-500 to-amber-500/0 animate-pulse" />
+          
+          <h2 className="text-xs font-black uppercase tracking-widest text-slate-400 bg-slate-950 px-4 py-1.5 rounded-full border border-slate-900">
+            {isGirando ? "Sorteando..." : "Pronto para o Giro"}
+          </h2>
+
+          {/* 🎰 DISPLAY ILUMINADO GIGANTE (NÚMEROS DA SORTE) */}
+          <div className="flex justify-center gap-2.5 p-6 bg-slate-950 rounded-2xl border-2 border-slate-900 w-full shadow-inner relative group">
+            {numeroExibido.split("").map((digito, idx) => (
+              <div 
+                key={idx} 
+                className={`h-24 w-16 text-5xl font-black font-mono flex items-center justify-center rounded-xl border transition-all ${
+                  isGirando 
+                    ? "bg-amber-500/5 border-amber-500/20 text-amber-500/40 animate-pulse" 
+                    : ganhadorConfirmado 
+                      ? "bg-emerald-500 border-emerald-400 text-slate-950 scale-105 shadow-lg shadow-emerald-500/10" 
+                      : "bg-slate-900/60 border-slate-800 text-slate-300"
+                }`}
+              >
+                {digito}
+              </div>
             ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {!selectedEvent ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon"><Shuffle /></EmptyMedia>
-            <EmptyTitle>Selecione um evento</EmptyTitle>
-            <EmptyDescription>Escolha um evento para iniciar o Giro da Sorte</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : eligible === undefined ? (
-        <Skeleton className="h-64 w-full rounded-2xl" />
-      ) : eligible.length === 0 ? (
-        <Empty>
-          <EmptyHeader>
-            <EmptyMedia variant="icon"><Users /></EmptyMedia>
-            <EmptyTitle>Nenhuma cartela elegível</EmptyTitle>
-            <EmptyDescription>Não há cartelas pagas e validadas neste evento para sortear</EmptyDescription>
-          </EmptyHeader>
-        </Empty>
-      ) : (
-        <>
-          {/* Eligible count */}
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-            <span className="text-sm font-semibold text-muted-foreground">
-              {eligible.length} cartela{eligible.length !== 1 ? "s" : ""} elegível{eligible.length !== 1 ? "is" : ""} (pagas + validadas)
-            </span>
           </div>
 
-          {/* Main spin panel */}
-          <div className="relative bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 rounded-3xl overflow-hidden border border-slate-700 shadow-2xl">
-            {/* Stars background */}
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-              {Array.from({ length: 20 }).map((_, i) => (
-                <Star
-                  key={i}
-                  className="absolute text-yellow-400/20"
-                  style={{
-                    width: `${8 + (i % 5) * 4}px`,
-                    top: `${(i * 37) % 90}%`,
-                    left: `${(i * 53) % 95}%`,
-                  }}
-                />
-              ))}
-            </div>
+          {/* BOTÃO MESTRE DE DISPARO */}
+          <button
+            onClick={handleIniciarGiro}
+            disabled={isGirando || cartelasAptas.length === 0}
+            className="w-full h-14 inline-flex items-center justify-center gap-2 rounded-2xl bg-amber-500 hover:bg-amber-400 disabled:opacity-30 text-slate-950 font-black tracking-wide text-sm transition-all shadow-xl shadow-amber-500/5 active:scale-95 cursor-pointer uppercase"
+          >
+            <RefreshCwIcon className={`h-5 w-5 ${isGirando ? 'animate-spin' : ''}`} />
+            {isGirando ? "Embaralhando Globo..." : "Girar e Sortear Número"}
+          </button>
+        </div>
 
-            <div className="relative z-10 flex flex-col items-center py-14 px-8 gap-8">
-              {/* Number display */}
-              <div className="relative">
-                <motion.div
-                  className={`w-56 h-56 rounded-full flex items-center justify-center border-4 shadow-2xl ${
-                    winner && !spinning
-                      ? "border-yellow-400 bg-yellow-950/60"
-                      : spinning
-                      ? "border-primary bg-primary/10"
-                      : "border-slate-600 bg-slate-800/60"
-                  }`}
-                  animate={spinning ? { scale: [1, 1.04, 1], rotate: [0, 2, -2, 0] } : {}}
-                  transition={{ duration: 0.3, repeat: spinning ? Infinity : 0 }}
-                >
-                  <AnimatePresence mode="wait">
-                    {currentDisplay !== null ? (
-                      <motion.span
-                        key={currentDisplay}
-                        initial={{ opacity: 0, scale: 0.6 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 1.4 }}
-                        transition={{ duration: 0.1 }}
-                        className={`text-6xl font-black tabular-nums ${
-                          winner && !spinning ? "text-yellow-400" : "text-white"
-                        }`}
-                      >
-                        {String(currentDisplay).padStart(6, "0")}
-                      </motion.span>
-                    ) : (
-                      <motion.span
-                        key="idle"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        className="text-5xl text-slate-500"
-                      >
-                        ?
-                      </motion.span>
-                    )}
-                  </AnimatePresence>
-                </motion.div>
-
-                {/* Winner crown */}
-                <AnimatePresence>
-                  {winner && !spinning && (
-                    <motion.div
-                      initial={{ scale: 0, y: -10 }}
-                      animate={{ scale: 1, y: 0 }}
-                      exit={{ scale: 0 }}
-                      className="absolute -top-6 left-1/2 -translate-x-1/2"
-                    >
-                      <Trophy className="w-10 h-10 text-yellow-400 drop-shadow-lg" />
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              {/* Winner info */}
-              <AnimatePresence>
-                {winner && !spinning && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    className="text-center space-y-2"
-                  >
-                    {winner.buyerName ? (
-                      <>
-                        <p className="text-yellow-400 font-black text-2xl">🎉 {winner.buyerName}</p>
-                        {winner.buyerPhone && (
-                          <p className="text-slate-400 text-sm font-medium">{winner.buyerPhone}</p>
-                        )}
-                      </>
-                    ) : (
-                      <p className="text-slate-300 font-semibold text-lg">Cartela sem comprador</p>
-                    )}
-                    <Badge className="bg-yellow-500 text-black font-black text-sm px-4 py-1">
-                      VENCEDOR!
-                    </Badge>
-                  </motion.div>
-                )}
-                {spinning && (
-                  <motion.p
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="text-primary font-bold text-lg animate-pulse"
-                  >
-                    Sorteando...
-                  </motion.p>
-                )}
-                {!spinning && !winner && (
-                  <motion.p
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="text-slate-400 font-medium"
-                  >
-                    Clique em Girar para sortear
-                  </motion.p>
-                )}
-              </AnimatePresence>
-
-              {/* Buttons */}
-              <div className="flex gap-3">
-                <Button
-                  size="lg"
-                  onClick={handleSpin}
-                  disabled={spinning}
-                  className="bg-yellow-500 hover:bg-yellow-400 text-black font-black text-lg px-10 rounded-2xl shadow-lg gap-2 disabled:opacity-50"
-                >
-                  <Shuffle className="w-5 h-5" />
-                  {spinning ? "Girando..." : "Girar!"}
-                </Button>
-                {(winner || history.length > 0) && !spinning && (
-                  <Button
-                    size="lg"
-                    variant="secondary"
-                    onClick={handleReset}
-                    className="rounded-2xl gap-2 text-white/70 bg-white/10 hover:bg-white/20 border-0"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    Limpar
-                  </Button>
-                )}
+        {/* COLUNA DO CARD DE DESTAQUE DO VENDEDOR / GANHADOR */}
+        <div className="md:col-span-1 h-full flex flex-col justify-center">
+          {ganhadorConfirmado ? (
+            <div className="bg-emerald-950/10 border-2 border-emerald-500 rounded-3xl p-6 text-center shadow-2xl backdrop-blur-md animate-fade-in relative flex flex-col justify-between h-fit">
+              <TrophyIcon className="h-12 w-12 text-emerald-400 mx-auto mb-2 animate-bounce" />
+              <h3 className="text-xl font-black text-emerald-400 uppercase tracking-tight">GANHADOR!</h3>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">Premiação de Série Validada</p>
+              
+              <div className="mt-5 space-y-3 bg-slate-950/80 p-4 rounded-2xl border border-slate-900 text-left font-sans">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Número Premiado:</span>
+                  <div className="text-lg font-black text-amber-500 font-mono mt-0.5">CRT-{ganhadorConfirmado.numero}</div>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Nome do Comprador:</span>
+                  <div className="text-sm font-extrabold text-white mt-0.5 capitalize truncate">{ganhadorConfirmado.nome}</div>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Últimos 4 Dígitos Fone:</span>
+                  <div className="text-xs font-bold font-mono text-slate-300 mt-0.5">****-**{ganhadorConfirmado.finalFone}</div>
+                </div>
+                <div className="pt-2 border-t border-slate-900 flex items-center gap-1.5 text-[11px] text-slate-400">
+                  <UserIcon className="h-3.5 w-3.5 text-slate-600" />
+                  <span className="truncate">Cambista: <strong className="text-slate-300">{ganhadorConfirmado.vendedor}</strong></span>
+                </div>
               </div>
             </div>
-          </div>
-
-          {/* History */}
-          {history.length > 1 && (
-            <div className="space-y-3">
-              <h3 className="text-sm font-black text-muted-foreground uppercase tracking-wide">
-                Histórico de sorteios
-              </h3>
-              <div className="space-y-2">
-                {history.slice(1).map((card, i) => (
-                  <div
-                    key={`${card._id}-${i}`}
-                    className="flex items-center justify-between bg-card border rounded-xl px-4 py-2.5"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-muted-foreground font-bold w-4">{history.length - 1 - i}º</span>
-                      <span className="font-black text-foreground tabular-nums">
-                        #{String(card.cardNumber).padStart(6, "0")}
-                      </span>
-                      {card.buyerName && (
-                        <span className="text-sm text-muted-foreground">{card.buyerName}</span>
-                      )}
-                    </div>
-                    {card.buyerPhone && (
-                      <span className="text-xs text-muted-foreground">{card.buyerPhone}</span>
-                    )}
-                  </div>
-                ))}
-              </div>
+          ) : (
+            <div className="border border-dashed border-slate-800 rounded-3xl p-8 text-center text-slate-600 flex flex-col items-center justify-center h-full min-h-[220px]">
+              <HelpCircleIcon className="h-8 w-8 text-slate-700 mb-2" />
+              <p className="text-xs font-semibold uppercase tracking-wider max-w-[160px] leading-relaxed">
+                Aguardando o sorteio para exibir o vencedor...
+              </p>
             </div>
           )}
-        </>
-      )}
+        </div>
+
+      </div>
     </div>
   );
 }

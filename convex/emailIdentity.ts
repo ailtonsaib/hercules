@@ -1,61 +1,40 @@
-"use node";
-import { action } from "./_generated/server";
 import { v } from "convex/values";
+import { query, mutation } from "./_generated/server";
 import { ConvexError } from "convex/values";
-import Hercules from "@usehercules/sdk";
 
-// Register (or re-trigger verification for) an email identity
-export const registerSenderEmail = action({
+/**
+ * 📋 QUERY: Buscar usuário por e-mail de forma flexível
+ */
+export const getByUserEmail = query({
   args: { email: v.string() },
-  handler: async (ctx, args): Promise<{ status: "pending" | "verified" | "failed"; identityId: string; alreadyExists: boolean }> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError({ code: "UNAUTHENTICATED", message: "Não autenticado" });
-
-    const hercules = new Hercules({
-      apiVersion: "2025-12-09",
-      apiKey: process.env.HERCULES_API_KEY,
-    });
-
-    const email = args.email.trim().toLowerCase();
-
-    // Check if identity already exists
-    const existing = await hercules.email.identities.list({ limit: 100 });
-    for await (const id of existing) {
-      if (id.type === "email" && id.value.toLowerCase() === email) {
-        if (id.status === "pending") {
-          // Resend verification email
-          await hercules.email.identities.verify(id.id, { resend: true });
-        }
-        return { status: id.status as "pending" | "verified" | "failed", identityId: id.id, alreadyExists: true };
-      }
-    }
-
-    // Create new identity
-    const created = await hercules.email.identities.create({ type: "email", value: email });
-    return { status: created.status as "pending" | "verified" | "failed", identityId: created.id, alreadyExists: false };
+  handler: async (ctx: any, args) => {
+    const emailClean = args.email.toLowerCase().trim();
+    
+    // Busca flexível varrendo a tabela sem travar em índices estritos de terceiros
+    const users = await ctx.db.query("users" as any).collect();
+    return users.find((u: any) => u.username === emailClean || u.email === emailClean) || null;
   },
 });
 
-// Check current status of an email identity
-export const checkSenderEmailStatus = action({
-  args: { email: v.string() },
-  handler: async (ctx, args): Promise<{ status: "pending" | "verified" | "failed" | "not_found" }> => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError({ code: "UNAUTHENTICATED", message: "Não autenticado" });
-
-    const hercules = new Hercules({
-      apiVersion: "2025-12-09",
-      apiKey: process.env.HERCULES_API_KEY,
-    });
-
-    const email = args.email.trim().toLowerCase();
-
-    for await (const id of await hercules.email.identities.list({ limit: 100 })) {
-      if (id.type === "email" && id.value.toLowerCase() === email) {
-        return { status: id.status as "pending" | "verified" | "failed" };
-      }
+/**
+ * 🔗 MUTATION: Vincular e-mail de identidade digital ao usuário local
+ */
+export const linkEmailIdentity = mutation({
+  args: {
+    userId: v.string(),
+    email: v.string(),
+  },
+  handler: async (ctx: any, args) => {
+    const user = await ctx.db.get(args.userId as any);
+    if (!user) {
+      throw new ConvexError("Usuário master não localizado para vinculação.");
     }
 
-    return { status: "not_found" };
+    await ctx.db.patch(args.userId as any, {
+      email: args.email.toLowerCase().trim(),
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
   },
 });

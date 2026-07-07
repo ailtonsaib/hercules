@@ -11,3 +11,8 @@ blockExoticSubdeps: true
 minimumReleaseAge: 4320
 minimumReleaseAgeExclude:
   - "@usehercules/*"
+allowBuilds:
+  '@clerk/shared': false
+  '@swc/core': true
+  core-js: true
+  esbuild: true

@@ -1,71 +1,64 @@
-import { BrowserRouter, Route, Routes } from "react-router-dom";
-import { DefaultProviders } from "./components/providers/default.tsx";
-import AuthCallback from "./pages/auth/Callback.tsx";
-import AppLayout from "./components/layout/AppLayout.tsx";
-import AccessGuard from "./components/AccessGuard.tsx";
-import EventsPage from "./pages/events/page.tsx";
-import CardsPage from "./pages/cards/page.tsx";
-import DrawPage from "./pages/draw/page.tsx";
-import ValidatePage from "./pages/validate/page.tsx";
-import DashboardPage from "./pages/dashboard/page.tsx";
-import TelaoPage from "./pages/draw/telao.tsx";
-import VendorPage from "./pages/vendor/page.tsx";
-import VendorsPage from "./pages/vendors/page.tsx";
-import ReportsPage from "./pages/reports/page.tsx";
-import AdminPage from "./pages/admin/page.tsx";
-import InfoPage from "./pages/info/page.tsx";
-import GiroPage from "./pages/giro/page.tsx";
-import BatchesPage from "./pages/batches/page.tsx";
-import RifasPage from "./pages/rifas/page.tsx";
-import DesignCartelaPage from "./pages/design-cartela/page.tsx";
-import MeuPainelPage from "./pages/meu-painel/page.tsx";
-import MinhasCartelasPage from "./pages/minhas-cartelas/page.tsx";
-import ConvitePage from "./pages/convite/page.tsx";
-import ValidadorPage from "./pages/validador/page.tsx";
-import ValidarCartelaPage from "./pages/validar-cartela/page.tsx";
-import NotFound from "./pages/NotFound.tsx";
-import { useServiceWorker } from "@/hooks/use-service-worker.ts";
-import { PwaInstallBanner } from "@/components/pwa-install-banner.tsx";
+import * as React from "react";
+import { BrowserRouter, Routes, Route, useParams, Navigate, Outlet } from "react-router-dom";
+import AppLayout from "./components/layout/AppLayout";
+import { AccessGuard } from "./components/AccessGuard";
+
+// Importações das páginas operacionais do sistema
+import PaginaEventosGeral from "./pages/events/page";
+import GerenciadorLotes from "./pages/batches/page";
+import ImpressaoLotePage from "./pages/dashboard/ImpressaoLotePage";
+import MesaSorteioPage from "./pages/dashboard/MesaSorteioPage";
+import ValidationPage from "./pages/validate/ValidationPage";
+import PainelCartelasMestre from "./pages/cartelas/page";
+import GiroSortePage from "./pages/giro/page";
+import GerenciadorCambistasMestre from "./pages/vendors/page";
+import ModuloRifasMestre from "./pages/rifas/page";
+// 👑 WRAPPERS DE REDIRECIONAMENTO: Capturam o eventId da URL e injetam nas páginas de forma limpa
+function MesaSorteioPageWrapper() {
+  const { eventId } = useParams<{ eventId: string }>();
+  return <MesaSorteioPage eventId={eventId || ""} />;
+}
 
 export default function App() {
-  useServiceWorker();
   return (
-    <DefaultProviders>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/auth/callback" element={<AuthCallback />} />
-          <Route path="/telao" element={<TelaoPage />} />
-          <Route path="/convite" element={<ConvitePage />} />
-          <Route path="/validador" element={<ValidadorPage />} />
-          <Route path="/validar-cartela" element={<ValidarCartelaPage />} />
-          <Route path="/vendedor" element={<VendorPage />} />
-          <Route path="/minhas-cartelas" element={<MinhasCartelasPage />} />
-          <Route
-            element={
-              <AccessGuard>
-                <AppLayout />
-              </AccessGuard>
-            }
-          >
-            <Route path="/" element={<EventsPage />} />
-            <Route path="/cartelas" element={<CardsPage />} />
-            <Route path="/sorteio" element={<DrawPage />} />
-            <Route path="/validar" element={<ValidatePage />} />
-            <Route path="/vendedores" element={<VendorsPage />} />
-            <Route path="/relatorios" element={<ReportsPage />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/informacoes" element={<InfoPage />} />
-            <Route path="/giro" element={<GiroPage />} />
-            <Route path="/lotes" element={<BatchesPage />} />
-            <Route path="/rifas" element={<RifasPage />} />
-            <Route path="/design-cartela" element={<DesignCartelaPage />} />
-            <Route path="/admin" element={<AdminPage />} />
-            <Route path="/meu-painel" element={<MeuPainelPage />} />
-          </Route>
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-        <PwaInstallBanner />
-      </BrowserRouter>
-    </DefaultProviders>
+    <BrowserRouter>
+      <Routes>
+        {/* Rota Raiz redireciona direto para a tela de Eventos */}
+        <Route path="/" element={<Navigate to="/events" replace />} />
+
+        {/* 🔒 CONFIGURAÇÃO DE ROTAS INTEGRADA: 
+            Renderiza a verificação de acesso e o menu lateral diretamente na rota pai, 
+            garantindo que o ConvexProvider (que está no seu index.tsx/main.tsx) cubra tudo perfeitamente! */}
+        <Route 
+          element={
+            <AccessGuard>
+              <AppLayout>
+                <Outlet />
+              </AppLayout>
+            </AccessGuard>
+          }
+        >
+          {/* Páginas Internas do Painel Administrativo */}
+          <Route path="/events" element={<PaginaEventosGeral />} />
+          <Route path="/batches" element={<GerenciadorLotes />} />
+          <Route path="/impressao-lote/:eventId/:batchId" element={<ImpressaoLotePage />} />
+          <Route path="/sorteio/:eventId" element={<MesaSorteioPageWrapper />} />
+          <Route path="/validar/:eventId" element={<ValidationPage />} />
+
+          {/* Placeholders temporários para as demais telas do menu lateral */}
+          <Route path="/cartelas" element={<PainelCartelasMestre />} />
+          <Route path="/giro" element={<GiroSortePage />} />
+          <Route path="/vendors" element={<GerenciadorCambistasMestre />} />
+          <Route path="/rifas" element={<ModuloRifasMestre />} />
+          <Route path="/design-cartela" element={<div className="p-6 text-slate-400 font-bold">Estilização e Cores do Bilhete</div>} />
+          <Route path="/reports" element={<div className="p-6 text-slate-400 font-bold">Relatórios Financeiros e Auditorias</div>} />
+          <Route path="/dashboard" element={<div className="p-6 text-slate-400 font-bold">Dashboard Estatística Antiga</div>} />
+          <Route path="/info" element={<div className="p-6 text-slate-400 font-bold">Informações Gerais do Sistema Hercules</div>} />
+        </Route>
+
+        {/* Rota de segurança para caminhos inválidos ou inexistentes */}
+        <Route path="*" element={<Navigate to="/events" replace />} />
+      </Routes>
+    </BrowserRouter>
   );
 }

@@ -1,279 +1,171 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "@/convex/_generated/api.js";
-import { Button } from "@/components/ui/button.tsx";
-import { Badge } from "@/components/ui/badge.tsx";
-import { Input } from "@/components/ui/input.tsx";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select.tsx";
-import { Skeleton } from "@/components/ui/skeleton.tsx";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog.tsx";
-import { Label } from "@/components/ui/label.tsx";
+import * as React from "react";
+import { useMutation, useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api"; // Ajuste o número de pontos (../../) se o arquivo estiver mais fundo em subpastas
+import { TrophyIcon, PlusIcon, ShieldCheckIcon, LogOutIcon, CalendarIcon } from "lucide-react";
 import { toast } from "sonner";
-import { Layers, CheckCircle2, Clock, Search, Package, DollarSign } from "lucide-react";
-import { cn } from "@/lib/utils.ts";
-import type { Id } from "@/convex/_generated/dataModel.d.ts";
 
-type CardDoc = {
-  _id: Id<"cards">;
-  cardNumber: number;
-  buyerName?: string;
-  buyerPhone?: string;
-  paid?: boolean;
-  validated?: boolean;
-  eventId: Id<"events">;
-};
+export default function MeuPainelScreen() {
+  const [title, setTitle] = React.useState("");
+  const [description, setDescription] = React.useState("");
+  const [isLoading, setIsLoading] = React.useState(false);
 
-function SellDialog({
-  card,
-  open,
-  onClose,
-}: {
-  card: CardDoc;
-  open: boolean;
-  onClose: () => void;
-}) {
-  const [name, setName] = useState(card.buyerName ?? "");
-  const [phone, setPhone] = useState(card.buyerPhone ?? "");
-  const [loading, setLoading] = useState(false);
-  const assignBuyer = useMutation(api.cards.assignBuyer);
+  // 1. Recupera a sessão local salva no localStorage pelo formulário de Login
+  const token = localStorage.getItem("hercules_session_token") || "";
+  const userDataRaw = localStorage.getItem("hercules_user");
+  const user = userDataRaw ? JSON.parse(userDataRaw) : { name: "Usuário", role: "user" };
 
-  const handleSave = async () => {
-    if (!name.trim()) { toast.error("Informe o nome do comprador"); return; }
-    setLoading(true);
+  // 2. Escuta a Mutation de criar e a Query de listar os eventos em tempo real
+  const criarEvento = useMutation((api as any).events.create);
+  const listaEventos = useQuery((api as any).events.list) || [];
+
+  const handleCriarEvento = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) {
+      toast.error("O título do evento é obrigatório.");
+      return;
+    }
+
+    setIsLoading(true);
     try {
-      await assignBuyer({ cardId: card._id, buyerName: name.trim(), buyerPhone: phone, paid: true });
-      toast.success("Venda registrada!");
-      onClose();
-    } catch {
-      toast.error("Erro ao registrar venda");
+      // Envia o formulário incluindo o token de autenticação local para validação no backend
+      await criarEvento({
+        token,
+        title,
+        description: description || undefined,
+      });
+
+      toast.success("Evento adicionado com sucesso!");
+      setTitle("");
+      setDescription("");
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.message || "Erro ao tentar salvar o evento no banco.");
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Registrar Venda — Cartela #{card.cardNumber}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 pt-2">
-          <div className="space-y-1.5">
-            <Label>Nome do comprador</Label>
-            <Input placeholder="João Silva" value={name} onChange={(e) => setName(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Telefone (opcional)</Label>
-            <Input placeholder="(62) 99999-9999" value={phone} onChange={(e) => setPhone(e.target.value)} />
-          </div>
-          <div className="flex gap-2 pt-2">
-            <Button variant="secondary" className="flex-1 cursor-pointer" onClick={onClose}>Cancelar</Button>
-            <Button className="flex-1 cursor-pointer" onClick={() => void handleSave()} disabled={loading}>
-              {loading ? "Salvando..." : "Confirmar Venda"}
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-export default function MeuPainelPage() {
-  const currentUser = useQuery(api.users.getCurrentUser);
-  const allEvents = useQuery(api.events.list);
-  const [selectedEventId, setSelectedEventId] = useState<string>("");
-  const [search, setSearch] = useState("");
-  const [sellCard, setSellCard] = useState<CardDoc | null>(null);
-
-  const linkedVendorId = currentUser?.linkedVendorId;
-
-  const vendorBatches = useQuery(
-    api.vendors.getVendorBatches,
-    linkedVendorId ? { vendorId: linkedVendorId } : "skip"
-  );
-
-  const eventCards = useQuery(
-    api.cards.listPaginated,
-    selectedEventId ? { eventId: selectedEventId as Id<"events">, paginationOpts: { numItems: 200, cursor: null } } : "skip"
-  );
-
-  if (!currentUser) {
-    return (
-      <div className="p-6 space-y-4">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-32 w-full" />
-      </div>
-    );
-  }
-
-  if (currentUser.role !== "vendor" && !currentUser.isAdmin) {
-    return (
-      <div className="flex items-center justify-center h-full p-8">
-        <p className="text-muted-foreground">Acesso restrito.</p>
-      </div>
-    );
-  }
-
-  const myBatchByEvent: Record<string, number[]> = {};
-  if (vendorBatches) {
-    for (const batch of vendorBatches) {
-      const eid = batch.eventId as string;
-      if (!myBatchByEvent[eid]) myBatchByEvent[eid] = [];
-      myBatchByEvent[eid].push(...batch.cardNumbers);
-    }
-  }
-
-  const myEventIds = Object.keys(myBatchByEvent);
-  const myEvents = allEvents?.filter((e) => myEventIds.includes(e._id)) ?? [];
-
-  const assignedNumbers = selectedEventId ? (myBatchByEvent[selectedEventId] ?? []) : [];
-  const myCards = (eventCards?.page ?? []).filter((c) =>
-    assignedNumbers.includes(c.cardNumber)
-  );
-
-  const filtered = myCards.filter((c) => {
-    if (!search) return true;
-    return (
-      c.cardNumber.toString().includes(search) ||
-      (c.buyerName?.toLowerCase().includes(search.toLowerCase()) ?? false)
-    );
-  });
-
-  const stats = {
-    total: myCards.length,
-    sold: myCards.filter((c) => c.paid).length,
-    pending: myCards.filter((c) => !c.paid).length,
+  const handleLogout = () => {
+    localStorage.clear();
+    toast.info("Sessão encerrada.");
+    window.location.reload();
   };
 
   return (
-    <div className="p-4 md:p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-black text-foreground">Meu Painel</h1>
-        <p className="text-muted-foreground text-sm">
-          Bem-vindo, {currentUser.name ?? "Vendedor"}
-        </p>
-      </div>
-
-      <div className="flex flex-col sm:flex-row gap-3">
-        <Select value={selectedEventId} onValueChange={setSelectedEventId}>
-          <SelectTrigger className="w-full sm:w-72">
-            <SelectValue placeholder="Selecione um evento" />
-          </SelectTrigger>
-          <SelectContent>
-            {myEvents.map((e) => (
-              <SelectItem key={e._id} value={e._id}>
-                {e.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {selectedEventId && (
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por número ou comprador..."
-              className="pl-9"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+    <div className="flex min-h-screen flex-col bg-slate-950 p-6 text-white font-sans">
+      {/* Barra de Navegação Superior */}
+      <header className="mb-8 flex items-center justify-between border-b border-slate-900 pb-5">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/10 text-amber-500">
+            <TrophyIcon className="h-5 w-5" />
           </div>
-        )}
-      </div>
-
-      {selectedEventId && (
-        <div className="grid grid-cols-3 gap-3">
-          <div className="bg-card border rounded-xl p-4 text-center">
-            <div className="text-2xl font-black text-foreground">{stats.total}</div>
-            <div className="text-xs text-muted-foreground mt-1 flex items-center justify-center gap-1">
-              <Package className="w-3 h-3" /> Total
-            </div>
-          </div>
-          <div className="bg-card border rounded-xl p-4 text-center">
-            <div className="text-2xl font-black text-green-600">{stats.sold}</div>
-            <div className="text-xs text-muted-foreground mt-1 flex items-center justify-center gap-1">
-              <CheckCircle2 className="w-3 h-3 text-green-500" /> Pagos
-            </div>
-          </div>
-          <div className="bg-card border rounded-xl p-4 text-center">
-            <div className="text-2xl font-black text-yellow-600">{stats.pending}</div>
-            <div className="text-xs text-muted-foreground mt-1 flex items-center justify-center gap-1">
-              <Clock className="w-3 h-3 text-yellow-500" /> Pendentes
-            </div>
+          <div>
+            <h1 className="text-xl font-bold text-slate-100">Painel Bingo Premier</h1>
+            <p className="text-xs text-slate-400">Olá, {user.name}</p>
           </div>
         </div>
-      )}
 
-      {selectedEventId && (
-        <div className="space-y-2">
-          {!eventCards ? (
-            Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 w-full rounded-xl" />
-            ))
-          ) : filtered.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              <Layers className="w-10 h-10 mx-auto mb-3 opacity-30" />
-              <p>Nenhuma cartela encontrada</p>
+        <div className="flex items-center gap-4">
+          {/* Tag Visual do Administrador Supremo */}
+          {user.role === "admin" && (
+            <div className="flex items-center gap-1 rounded-full bg-amber-500/10 px-3 py-1 text-xs font-bold text-amber-400 border border-amber-500/20">
+              <ShieldCheckIcon className="h-3.5 w-3.5" /> Admin Mestre
+            </div>
+          )}
+          <button
+            onClick={handleLogout}
+            className="flex h-9 items-center gap-2 rounded-lg border border-slate-800 bg-slate-900/50 px-3 text-sm text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+          >
+            <LogOutIcon className="h-4 w-4" /> Sair
+          </button>
+        </div>
+      </header>
+
+      {/* Grade de Funcionalidades */}
+      <main className="grid gap-6 md:grid-cols-3">
+        {/* Painel de Criação: Só processa ações de gravação se for Admin */}
+        <section className="rounded-xl border border-slate-800 bg-slate-900/30 p-6 shadow-xl backdrop-blur-md">
+          <h2 className="text-lg font-bold text-slate-200 mb-4 border-b border-slate-800 pb-2">
+            Gerenciar Rodadas
+          </h2>
+
+          {user.role !== "admin" ? (
+            <p className="text-sm text-amber-500/80 bg-amber-500/5 p-4 rounded-lg border border-amber-500/10">
+              Apenas usuários com privilégio de administrador podem cadastrar novos sorteios ou modificar o sistema.
+            </p>
+          ) : (
+            <form onSubmit={handleCriarEvento} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  Título da Rodada
+                </label>
+                <input
+                  type="text"
+                  placeholder="Ex: Bingo Especial de Domingo"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  disabled={isLoading}
+                  className="h-10 rounded-lg border border-slate-800 bg-slate-950 px-3 text-sm focus:outline-none focus:border-amber-500 transition-colors"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                  Descrição / Prêmios
+                </label>
+                <textarea
+                  placeholder="Ex: Prêmio principal de R$ 5.000,00"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  disabled={isLoading}
+                  rows={3}
+                  className="rounded-lg border border-slate-800 bg-slate-950 p-3 text-sm focus:outline-none focus:border-amber-500 transition-colors resize-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="mt-2 h-10 inline-flex items-center justify-center gap-2 rounded-lg bg-amber-500 text-slate-950 font-bold text-sm transition-colors hover:bg-amber-400 disabled:opacity-50"
+              >
+                <PlusIcon className="h-4 w-4 stroke-[3]" />
+                {isLoading ? "Salvando..." : "Lançar Sorteio"}
+              </button>
+            </form>
+          )}
+        </section>
+
+        {/* Listagem em Tempo Real vinda do Banco Convex */}
+        <section className="col-span-2 flex flex-col gap-4">
+          <h2 className="text-lg font-bold text-slate-200">Sorteios Cadastrados (Banco Convex)</h2>
+
+          {listaEventos.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-800 p-12 text-center text-slate-500">
+              Nenhuma rodada em andamento. Use o painel ao lado para cadastrar.
             </div>
           ) : (
-            filtered.map((card) => (
-              <div
-                key={card._id}
-                className={cn(
-                  "flex items-center justify-between p-4 bg-card border rounded-xl",
-                  card.paid && "border-green-200 dark:border-green-900"
-                )}
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className={cn(
-                      "w-10 h-10 rounded-lg flex items-center justify-center font-black text-sm",
-                      card.paid
-                        ? "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300"
-                        : "bg-muted text-muted-foreground"
-                    )}
-                  >
-                    {card.cardNumber}
+            <div className="grid gap-4 sm:grid-cols-2">
+              {listaEventos.map((evento: any) => (
+                <div
+                  key={evento._id}
+                  className="rounded-xl border border-slate-800 bg-slate-900 p-5 transition-all hover:border-amber-500/40"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <h3 className="font-bold text-amber-400 text-lg">{evento.title}</h3>
+                    <CalendarIcon className="h-4 w-4 text-slate-600 shrink-0 mt-1" />
                   </div>
-                  <div>
-                    <p className="font-semibold text-sm text-foreground">
-                      {card.buyerName ?? <span className="text-muted-foreground italic">Sem comprador</span>}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{card.buyerPhone ?? ""}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {card.paid ? (
-                    <Badge className="bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 border-0">
-                      <CheckCircle2 className="w-3 h-3 mr-1" /> Pago
-                    </Badge>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="cursor-pointer text-xs"
-                      onClick={() => setSellCard(card as CardDoc)}
-                    >
-                      <DollarSign className="w-3 h-3 mr-1" /> Vender
-                    </Button>
+                  {evento.description && (
+                    <p className="text-sm text-slate-400 mt-2 line-clamp-3">{evento.description}</p>
                   )}
+                  <span className="text-[10px] font-mono text-slate-600 block mt-4 border-t border-slate-800/60 pt-2">
+                    ID REF: {evento._id}
+                  </span>
                 </div>
-              </div>
-            ))
+              ))}
+            </div>
           )}
-        </div>
-      )}
-
-      {!selectedEventId && myEvents.length === 0 && (
-        <div className="text-center py-16 text-muted-foreground">
-          <Package className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p className="font-medium">Nenhum lote atribuído</p>
-          <p className="text-sm mt-1">Aguarde o administrador atribuir cartelas a você.</p>
-        </div>
-      )}
-
-      {sellCard && (
-        <SellDialog card={sellCard} open={true} onClose={() => setSellCard(null)} />
-      )}
+        </section>
+      </main>
     </div>
   );
 }

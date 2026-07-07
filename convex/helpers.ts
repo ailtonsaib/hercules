@@ -1,25 +1,62 @@
 import { ConvexError } from "convex/values";
-import type { MutationCtx, QueryCtx } from "./_generated/server";
 
-export async function getCurrentUser(ctx: QueryCtx | MutationCtx) {
-  const identity = await ctx.auth.getUserIdentity();
-  if (!identity) {
-    throw new ConvexError({ message: "Usuário não autenticado", code: "UNAUTHENTICATED" });
+/**
+ * 🔒 HELPER: Validar Sessão Local e Nível de Acesso (Admin)
+ * Substitui as checagens antigas do Clerk e garante auditoria por token local.
+ */
+export async function validateAdminSession(ctx: any, token: string) {
+  if (!token) {
+    throw new ConvexError("Sessão inválida ou token não fornecido.");
   }
-  const user = await ctx.db
-    .query("users")
-    .withIndex("by_token", (q) => q.eq("tokenIdentifier", identity.tokenIdentifier))
-    .unique();
-  if (!user) {
-    throw new ConvexError({ message: "Usuário não encontrado", code: "NOT_FOUND" });
+
+  // 1. Busca a sessão ativa na tabela local
+  const session = await ctx.db
+    .query("sessions" as any)
+    .filter((q: any) => q.eq(q.field("token"), token))
+    .first();
+
+  if (!session || (session as any).expiresAt < Date.now()) {
+    throw new ConvexError("Sessão expirada. Por favor, faça login novamente.");
   }
+
+  // 2. Busca o usuário vinculado e valida o privilégio mestre
+  const user = await ctx.db.get(session.userId);
+  if (!user || (user as any).role !== "admin") {
+    throw new ConvexError("Ação restrita. Apenas administradores mestre possuem autorização.");
+  }
+
   return user;
 }
 
-export async function requireAdmin(ctx: QueryCtx | MutationCtx) {
-  const user = await getCurrentUser(ctx);
-  if (!user.isAdmin) {
-    throw new ConvexError({ message: "Sem permissão de administrador", code: "FORBIDDEN" });
+/**
+ * 🎰 HELPER: Gerar Matriz Aleatória de Bingo (Cartela Padrão 5x5)
+ * Cria 24 dezenas numéricas únicas respeitando as colunas clássicas (B-I-N-G-O)
+ */
+export function generateBingoMatrix(): number[] {
+  const matrix: number[] = [];
+  
+  const ranges = [
+    { min: 1, max: 15 },   // B
+    { min: 16, max: 30 },  // I
+    { min: 31, max: 45 },  // N (terá 4 números devido ao centro livre)
+    { min: 46, max: 60 },  // G
+    { min: 61, max: 75 }   // O
+  ];
+
+  for (let col = 0; col < 5; col++) {
+    const range = ranges[col];
+    const colNumbers: number[] = [];
+    const countNeeded = col === 2 ? 4 : 5; // A coluna N pula o centro (FREE)
+
+    while (colNumbers.length < countNeeded) {
+      const num = Math.floor(Math.random() * (range.max - range.min + 1)) + range.min;
+      if (!colNumbers.includes(num)) {
+        colNumbers.push(num);
+      }
+    }
+    
+    matrix.push(...colNumbers.sort((a, b) => a - b));
   }
-  return user;
+
+  return matrix;
 }
