@@ -63,13 +63,15 @@
       } catch (e) {}
     </script>
 
-    <link href="/src/index.css" rel="stylesheet" />
+    <!-- 🔧 CORRIGIDO: Removida a barra inicial para o Netlify achar o arquivo de estilos -->
+    <link href="src/index.css" rel="stylesheet" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <!-- 🔧 CORRIGIDO: Removida a barra inicial para o motor do Vite compilar no Linux remoto -->
+    <script type="module" src="src/main.tsx"></script>
   </body>
 </html>
