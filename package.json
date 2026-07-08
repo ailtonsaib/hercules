@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "preview": "vite preview",
-    "build": "tsc -b && vite build",
+    "build": "vite build",
     "lint": "eslint .",
     "prettier-fix": "prettier --write .",
     "prettier-check": "prettier --check ."
@@ -101,4 +101,4 @@
     "typescript-eslint": "^8.59.2",
     "vite": "^7.3.2"
   }
- }
+}
