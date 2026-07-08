@@ -21,7 +21,7 @@ export default function GerenciadorLotes() {
 
   // 📲 LINK CORRIGIDO: Alterado para a rota correta do aplicativo do vendedor do seu sistema
   // Se for testar no celular pela rede local, lembre-se de usar: "http://SEU_IP_LOCAL:5173/appvendedor"
-  const linkDoAppVendedor = "https://vercel.app";
+  const linkDoAppVendedor = "https://netlify.app";
 
   // 📋 Função para copiar o endereço do app do vendedor para a área de transferência
   const handleCopiarLink = () => {
