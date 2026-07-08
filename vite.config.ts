@@ -1,13 +1,14 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
-import tailwindcss from "@tailwindcss/vite"; // Adiciona o compilador nativo do v4
+import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
 // https://vite.dev
 export default defineConfig({
+  base: "./", // 🚀 INJEÇÃO RELATIVA: Força o Vite a ignorar barras absolutas e achar o src/main.tsx em qualquer servidor
   plugins: [
     react(),
-    tailwindcss() // Injeta o Tailwind v4 diretamente no motor do Vite
+    tailwindcss() 
   ],
   resolve: {
     alias: {
